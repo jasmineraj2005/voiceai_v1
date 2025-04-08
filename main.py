@@ -5,8 +5,11 @@ from fastapi import FastAPI, Request
 from twilio.twiml.voice_response import VoiceResponse, Connect 
 import requests 
 import json 
-import boto3 
 from google.cloud import speech_v1p1beta1 as speech 
+import os
+from dotenv import load_dotenv
+
+load_dotenv
 
 # fastapi intialization 
 app = FastAPI()
@@ -25,18 +28,38 @@ def transcribe_audio(audio_data):
     response = client.recognize(config=config, audio=audio)
     return response.results[0].alternatives[0].transcript
 
+# Unified API function 
+def generate_response(user_input, model = "qwem", emotion = "neutral"): 
+    """
+    Unified function to call OpenAI or Qwen API based on 'model' argument.
+    Default is Qwen. 
+
+    :param user_input: Input text to generate a response for. 
+    :param model: The model to use ("openai" or "qwen").
+    :param emotion: The emotion to convey("happy", "sad", "neutral", etc.)
+    :return: Generated text response.
+    """
+
+    if model == "openai":
+        return openai_generate_response(user_input, emotion)
+    elif model == "qwen":
+        return qwen_generate_response (user_input, emotion)
+    else: raise ValueError("Invalis model specified, Use 'openai' or 'qwen'.")
+  
 # Qwen 2.5 Max API request
 def generate_response(user_input):
-    QWEN_API_URL = "****" #add
-    QWEN_API_KEY = "sk-10d0ff58eda749dbbb1d13a6f9ec6c63"
+    QWEN_API_URL = os.getenv("QWEN_API_URL")
+    QWEn_API_KEY = os.getenv("QWEN_API_KEY")
 
     headers = {
         "Authorization": f"Bearer {QWEN_API_KEY}",
         "Content-Type": "application/json"
     }
 
+    emotional_promopt = f"Respond with a {emotion} tone and include conversational gestures like 'ahh', 'wow', 'hmm', 'yay', etc when appropriate: {user_input}"
+
     data = {
-        "prompt": user_input,
+        "prompt": emotional_promopt,
         "max_tokens": 100,
         "temperature": 0.7
     }
@@ -44,21 +67,31 @@ def generate_response(user_input):
     response = requests.post(QWEN_API_URL, json = data, headers = headers)
     return response.json() ["output"]["text"]
 
-# Amazon Polly Service for Text to Speech (TTS Model)
+# 11 Labs (TTS Model)
+def text_to_speech(text, emotion="neutral"):
+    ELEVEN_LABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech/generate"
+    ELEVEN_LABS_API_KEY = os.getenv(" ELEVEN_LABS_API_KEY")
 
-def text_to_speech(text):
-    polly = boto3.client("polly", region_name = "ap-southeast-2") #sydney
+    headers = {
+        "Authorization": f"Bearer { ELEVEN_LABS_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
-    response = polly.synthesize_speech(
-        Text = text,
-        OutputFormat = "pcm",
-        VoiceId = "Nicole" #Female Aussie
-    )
+    data = {
+        "text": text, 
+        "voice": "en-au-female", 
+        "emotion": emotion
+    }
 
-    return response["AudioStream"].read()
+    response = requests.post(ELEVEN_LABS_API_URL, json = data, headers = headers)
+
+    if response.status_code == 200:
+        audio_content = response.content 
+        return audio_content 
+    else: 
+        raise Exception(f"Error: {response.status_code}, {response.text}")
 
 # Route to handle incoming call and stream audio
-
 @app.post("/incoming-call")
 async def handle_incoming_call(request: Request):
     response = VoiceResponse()
@@ -82,9 +115,15 @@ async def handle_media_stream(websocket):
             audio_data = data['media']['payload']
             transcribe_text = transcribe_audio(audio_data)
 
-            qwen_response = generate_response(transcribe_text)
-            audio_response = text_to_speech(qwen_response)
-            audio_base64 = text_to_speech(qwen_response)
+           # Use Qwen or OpenAI (can switch between them using `model` argument)
+            refined_text = generate_response(transcribe_text, model="qwen", emotion="happy")  # Set emotion (e.g., "happy", "sad", "neutral")
+
+            # Convert the refined text to speech using 11 Labs TTS
+            audio_response = text_to_speech(refined_text, emotion="happy")  # This now uses 11 Labs TTS and emotion
+
+            # Send back audio in base64 format (if required, can be adjusted)
+            audio_base64 = audio_response.encode("base64")  # This is just for illustration; adjust as necessary
+
             await websocket.sen_json({
                 "event": "media",
                 "media": {
