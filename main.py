@@ -9,7 +9,7 @@ from google.cloud import speech_v1p1beta1 as speech
 import os
 from dotenv import load_dotenv
 
-load_dotenv
+load_dotenv()
 
 # fastapi intialization 
 app = FastAPI()
@@ -19,7 +19,7 @@ def transcribe_audio(audio_data):
     client = speech.SpeechClient()
     audio = speech.RecognitionAudio(content=audio_data)
 
-    config = speech.RecogmitionConfig(
+    config = speech.RecognitionConfig(
         encoding = speech.RecognitionConfig.AudioEncoding.LINEAR16, 
         sample_rate_hertz = 8000,
         language_code = "en-US"
@@ -41,15 +41,19 @@ def generate_response(user_input, model = "qwem", emotion = "neutral"):
     """
 
     if model == "openai":
-        return openai_generate_response(user_input, emotion)
+        # Placeholder for OpenAI response generation logic
+        return f"OpenAI response for: {user_input} with emotion: {emotion}"
     elif model == "qwen":
-        return qwen_generate_response (user_input, emotion)
+        # Placeholder for Qwen response generation logic
+        return f"Qwen response for: {user_input} with emotion: {emotion}"
     else: raise ValueError("Invalis model specified, Use 'openai' or 'qwen'.")
   
 # Qwen 2.5 Max API request
-def generate_response(user_input):
+def generate_response(user_input, emotion="neutral"):
     QWEN_API_URL = os.getenv("QWEN_API_URL")
-    QWEn_API_KEY = os.getenv("QWEN_API_KEY")
+    QWEN_API_KEY = os.getenv("QWEN_API_KEY")
+    if not QWEN_API_KEY:
+        raise EnvironmentError("Environment variable 'QWEN_API_KEY' is not defined. Please check your .env file.")
 
     headers = {
         "Authorization": f"Bearer {QWEN_API_KEY}",
